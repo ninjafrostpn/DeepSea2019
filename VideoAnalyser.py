@@ -18,21 +18,22 @@ capw, caph = cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGH
 capsize = np.int32([capw, caph])
 screensize = np.int32([capw, caph + 50])
 screen = pygame.display.set_mode(screensize)
+viewport = screen.subsurface([0, 50, capw, caph])
 pygame.display.set_caption("VIDEO", "Video")
 print("{:.0f} frames ({:.0f} x {:.0f}) at {} FPS".format(capn, capw, caph, capfps))
 
 # Blob-shaped filter used to find red blobs
-redblobfinder = -np.ones([17, 17])/2
-redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 1, -1)
+redblobfinder = - 5 * np.ones([17, 17])
+redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 
 pause = False
-# pos = cap.set(cv2.CAP_PROP_POS_FRAMES, 7100)
-skipspeed = 100
+pos = cap.set(cv2.CAP_PROP_POS_FRAMES, 15500)
+skipspeed = 5
 
 while True:
     if not pause:
         pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
-    for i in range(100):
+    for i in range(skipspeed):
         ret, frame = cap.read()
     if ret:
         screen.fill(0)
@@ -41,11 +42,18 @@ while True:
         pframe = pygame.surfarray.make_surface(frame)
         # Look for the red dots in the "middle half" of the image area
         redness = np.sum(frame[330:700, 144:432] * [1, -0.5, -0.5], axis=2)
-        dotlikeness = convolve(redness, redblobfinder)
-        upperdot = np.unravel_index(np.argmax(dotlikeness), dotlikeness.shape)
-        screen.blit(pframe, (0, 50))
-        pygame.draw.rect(screen, WHITE, [330, 194, 370, 288], 1)
-        pygame.draw.circle(screen, WHITE, np.int32(upperdot) + [330, 194], 20, 1)
+        dotlikeness = convolve(redness, redblobfinder, mode="constant", cval=0)
+        # First-guess upper and lower dots' positions
+        upperdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, :144]), (700, 144))) + (330, 144)
+        lowerdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, 144:]), (700, 144))) + (330, 288)
+        # Draw video frame to screen
+        viewport.blit(pframe, (0, 0))
+        # Draw dot-finder reticle
+        pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 1)
+        pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 1)
+        pygame.draw.circle(viewport, WHITE, upperdot, 20, 1)
+        pygame.draw.circle(viewport, WHITE, lowerdot, 20, 1)
+        pygame.draw.line(viewport, WHITE, lowerdot, upperdot, 1)
         screen.blit(textfont.render("Frame: {:07.0f}".format(pos), True, WHITE), (0, 0))
     pygame.display.flip()
     for e in pygame.event.get():
