@@ -10,33 +10,43 @@ df.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", 
 df = df.assign(VideoTimeSecs=timetosec(df["VideoTime"]))
 
 # Plot vs Time
-fig, ax = plt.subplots()
-templine = ax.plot(df["VideoTimeSecs"], df["Temp"], "r-", lw=0.5)[0]
-ax.set_ylabel("Temperature (°C)")
-ax.set_xlabel("Video Time (s)")
-ax.set_ylim(0, 1)
-ax.set_xlim(0, max(df["VideoTimeSecs"]))
-ax = ax.twinx()
-salline = plt.plot(df["VideoTimeSecs"], df["Salinity"], "b-", lw=0.5)[0]
-ax.set_ylabel("Salinity", rotation=-90, labelpad=12)
-ax.set_ylim(34, 34.8)
-ax.legend([templine, salline], ["Temperature (°C)", "Salinity"], )
+fig, ax1 = plt.subplots()
+depthline = plt.plot(df["VideoTimeSecs"], df["Depth"], "b-", lw=0.5)[0]
+ax1.set_ylabel("Depth (m)")
+ax1.set_xlabel("Video Time (s)")
+ax1.set_ylim(1520, 1360)
+ax1.set_xlim(0, max(df["VideoTimeSecs"]))
+ax2 = ax1.twinx()
+templine = ax2.plot(df["VideoTimeSecs"], df["Temp"], "r-", lw=0.5)[0]
+ax2.set_ylabel("Temperature (°C)", rotation=-90, labelpad=12)
+ax2.set_ylim(0, 1)
+ax3 = ax1.twinx()
+salline = ax3.plot(df["VideoTimeSecs"], df["Salinity"], "g-", lw=0.5)[0]
+ax3.set_ylabel("Salinity", rotation=-90, labelpad=12)
+ax3.set_ylim(34.2, 34.8)
+ax3.spines["right"].set_position(("axes", 1.2))
+ax3.legend([depthline, templine, salline], ["Depth (m)", "Temperature (°C)", "Salinity"], loc="lower left")
 fig.tight_layout()
-plt.savefig("TempSalinity over Time", dpi=200)
+plt.savefig("DepthTempSalinity over Time", dpi=200)
 plt.show()
 
 # Plot vs Dist
-fig, ax = plt.subplots()
-templine = ax.plot(df["Dist"], df["Temp"], "r-", lw=0.5)[0]
-ax.set_ylabel("Temperature (°C)")
-ax.set_xlabel("Track Distance (m)")
-ax.set_ylim(0, 1)
-ax.set_xlim(0, max(df["Dist"]))
-ax = ax.twinx()
-salline = plt.plot(df["Dist"], df["Salinity"], "b-", lw=0.5)[0]
-ax.set_ylabel("Salinity", rotation=-90, labelpad=12)
-ax.set_ylim(34, 34.8)
-ax.legend([templine, salline], ["Temperature (°C)", "Salinity"], )
+fig, ax1 = plt.subplots()
+depthline = plt.plot(df["Dist"], df["Depth"], "b-", lw=0.5)[0]
+ax1.set_ylabel("Depth (m)")
+ax1.set_xlabel("Track Distance (m)")
+ax1.set_ylim(1520, 1360)
+ax1.set_xlim(0, max(df["Dist"]))
+ax2 = ax1.twinx()
+templine = ax2.plot(df["Dist"], df["Temp"], "r-", lw=0.5)[0]
+ax2.set_ylabel("Temperature (°C)", rotation=-90, labelpad=12)
+ax2.set_ylim(0, 1)
+ax3 = ax1.twinx()
+salline = ax3.plot(df["Dist"], df["Salinity"], "g-", lw=0.5)[0]
+ax3.set_ylabel("Salinity", rotation=-90, labelpad=12)
+ax3.set_ylim(34.2, 34.8)
+ax3.spines["right"].set_position(("axes", 1.2))
+ax3.legend([depthline, templine, salline], ["Depth (m)", "Temperature (°C)", "Salinity"], loc="lower left")
 fig.tight_layout()
-plt.savefig("TempSalinity over Dist", dpi=200)
+plt.savefig("DepthTempSalinity over Dist", dpi=200)
 plt.show()
