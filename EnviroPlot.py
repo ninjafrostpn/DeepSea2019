@@ -7,15 +7,17 @@ timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
 df = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
 df.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", "Salinity"]
+df = df.assign(VideoTimeSecs=timetosec(df["VideoTime"]))
 
 # Plot vs Time
 fig, ax = plt.subplots()
-templine = ax.plot(timetosec(df["VideoTime"]), df["Temp"], "r-", lw=0.5)[0]
+templine = ax.plot(df["VideoTimeSecs"], df["Temp"], "r-", lw=0.5)[0]
 ax.set_ylabel("Temperature (°C)")
 ax.set_xlabel("Video Time (s)")
 ax.set_ylim(0, 1)
+ax.set_xlim(0, max(df["VideoTimeSecs"]))
 ax = ax.twinx()
-salline = plt.plot(timetosec(df["VideoTime"]), df["Salinity"], "b-", lw=0.5)[0]
+salline = plt.plot(df["VideoTimeSecs"], df["Salinity"], "b-", lw=0.5)[0]
 ax.set_ylabel("Salinity", rotation=-90, labelpad=12)
 ax.set_ylim(34, 34.8)
 ax.legend([templine, salline], ["Temperature (°C)", "Salinity"], )
@@ -29,6 +31,7 @@ templine = ax.plot(df["Dist"], df["Temp"], "r-", lw=0.5)[0]
 ax.set_ylabel("Temperature (°C)")
 ax.set_xlabel("Track Distance (m)")
 ax.set_ylim(0, 1)
+ax.set_xlim(0, max(df["Dist"]))
 ax = ax.twinx()
 salline = plt.plot(df["Dist"], df["Salinity"], "b-", lw=0.5)[0]
 ax.set_ylabel("Salinity", rotation=-90, labelpad=12)
