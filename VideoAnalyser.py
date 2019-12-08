@@ -9,9 +9,9 @@ from scipy.ndimage.filters import convolve
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
-df = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
-df.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", "Salinity"]
-df = df.assign(VideoTimeSecs=timetosec(df["VideoTime"]))
+dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
+dfenv.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", "Salinity"]
+dfenv = dfenv.assign(VideoTimeSecs=timetosec(dfenv["VideoTime"]))
 
 # Initialise window
 pygame.init()
@@ -31,7 +31,7 @@ textfont = pygame.font.Font(None, 30)
 
 # Initialise all window and video-getting tools
 cap = cv2.VideoCapture("IsisROV_dive148_TRANSECT.m4v")
-capn = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+capn = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 capfps = cap.get(cv2.CAP_PROP_FPS)
 capw, caph = cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 capsize = np.int32([capw, caph])
@@ -65,78 +65,119 @@ def writedataline(text, lineno, col=WHITE):
 redblobfinder = - 5 * np.ones([17, 17])
 redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 
-pause = False
-frame = getnewframe()
-pos = cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
+# Set initial state of playback
+pause = True
+showreticle = True
+pos, frame = getnewframe(9200)
+cap.set(cv2.CAP_PROP_POS_FRAMES, 9200)
 skipspeed = 5
 
-while True:
-    if K_SPACE in keys and K_SPACE not in prevkeys:
-        pause = not pause
-    if K_RIGHT in keys:
-        if pause:
-            pos += skipspeed
+# Create DataFrame for per-frame output data
+# The ScaleOK column ought to be switched to False where the script has picked up incorrectly
+# The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
+faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "Squeed"]
+coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in dfenv.columns},
+               "ScalePx": np.nan, "ScaleOK": True, "LastEdited": "nan", **{name: 0 for name in faunanames}}
+try:
+    dfout = pd.read_csv("AllData.csv")
+    print("{} frames displayed, {} in AllData.csv".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)))
+    if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
+        raise Exception("AllData.csv's Frame Count or Resolution Doesn't Match Analyser Setting")
+    coldefaultskeys = np.object_(list(coldefaults.keys()))
+    colsinmask = np.isin(coldefaultskeys, dfout.columns)
+    if not np.all(colsinmask):
+        print(coldefaultskeys[~colsinmask], "not found, adding")
+        dfout = dfout.assign(**{key: coldefaults[key] for key in coldefaultskeys[~colsinmask]})
+    print("Loaded in AllData.csv")
+except FileNotFoundError:
+    print("{} frames displayed and in AllData.csv".format(np.ceil(capn / skipspeed)))
+    print("No AllData.csv found, creating new DataFrame")
+    dfout = pd.DataFrame(coldefaults)
+
+try:
+    while True:
+        if K_SPACE in keys and K_SPACE not in prevkeys:
+            # Spacebar to toggle pause
+            pause = not pause
+        if K_TAB in keys and K_TAB not in prevkeys:
+            # Tab to toggle video reticle
+            showreticle = not showreticle
+        if K_RIGHT in keys:
+            # Skip forward with right arrow key
+            if pause:
+                # Skip is slower when paused
+                pos += skipspeed
+            else:
+                # 10x faster when unpaused
+                pos += 10 * skipspeed
+            pos, frame = getnewframe(pos)
+        elif K_LEFT in keys:
+            # Skip backward with left arrow key
+            if pause:
+                pos -= skipspeed
+            else:
+                pos -= 10 * skipspeed
+            pos, frame = getnewframe(pos)
+        elif not pause:
+            # Play forward by getting a certain number of frames according to skipspeed, and only showing the last one
+            # (elif, not if, to allow skipping back to frame 0)
+            for i in range(skipspeed):
+                pos, frame = getnewframe()
+        screen.fill(0)
+        pframe = pygame.surfarray.make_surface(frame)
+        # Look for the red dots in the "middle half" of the image area
+        redness = np.sum(frame[330:700, 144:432] * [1, -0.5, -0.5], axis=2)
+        dotlikeness = convolve(redness, redblobfinder, mode="constant", cval=0)
+        # First-guess upper and lower dots' positions
+        upperdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, :144]), (700, 144))) + (330, 144)
+        lowerdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, 144:]), (700, 144))) + (330, 288)
+        # Draw video frame to screen
+        viewport.blit(pframe, (0, 0))
+        scalebar = np.linalg.norm(upperdot - lowerdot)
+        if showreticle:
+            # Draw dot-finder reticle
+            pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 1)
+            pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 1)
+            pygame.draw.circle(viewport, WHITE, upperdot, 20, 1)
+            pygame.draw.circle(viewport, WHITE, lowerdot, 20, 1)
+            pygame.draw.line(viewport, WHITE, lowerdot, upperdot, 1)
+            pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
+            viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
+        # TODO: Add little loading-bar/range-bar -esque elements to accompany data
+        writedataline("~ VIDEO ~", 1)
+        writedataline("Frame: {:05.0f}/{:.0f}".format(pos, capn), 2)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(pos / capfps, capn / capfps), 3)
+        frametime = pos / capfps
+        if int(frametime) in dfenv["VideoTimeSecs"]:
+            dataindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
+            datatime = int(frametime)
         else:
-            pos += 10 * skipspeed
-        pos, frame = getnewframe(pos)
-    elif K_LEFT in keys:
-        if pause:
-            pos -= skipspeed
-        else:
-            pos -= 10 * skipspeed
-        pos, frame = getnewframe(pos)
-    elif not pause:
-        # elif, not if, to provide allow skipping back to frame 0
-        for i in range(skipspeed):
-            pos, frame = getnewframe()
-    screen.fill(0)
-    pframe = pygame.surfarray.make_surface(frame)
-    # Look for the red dots in the "middle half" of the image area
-    redness = np.sum(frame[330:700, 144:432] * [1, -0.5, -0.5], axis=2)
-    dotlikeness = convolve(redness, redblobfinder, mode="constant", cval=0)
-    # First-guess upper and lower dots' positions
-    upperdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, :144]), (700, 144))) + (330, 144)
-    lowerdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, 144:]), (700, 144))) + (330, 288)
-    # Draw video frame to screen
-    viewport.blit(pframe, (0, 0))
-    # Draw dot-finder reticle
-    pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 1)
-    pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 1)
-    pygame.draw.circle(viewport, WHITE, upperdot, 20, 1)
-    pygame.draw.circle(viewport, WHITE, lowerdot, 20, 1)
-    pygame.draw.line(viewport, WHITE, lowerdot, upperdot, 1)
-    scalebar = np.linalg.norm(upperdot - lowerdot)
-    pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
-    viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
-    writedataline("~ VIDEO ~", 1)
-    writedataline("Frame: {:05.0f}/{:.0f}".format(pos, capn), 2)
-    writedataline("Time: {:04.0f}s/{:.0f}s".format(pos / capfps, capn / capfps), 3)
-    frametime = pos / capfps
-    if int(frametime) in df["VideoTimeSecs"]:
-        dataindex = np.argwhere(int(frametime) == df["VideoTimeSecs"])[0][0]
-        datatime = int(frametime)
-    else:
-        dataindex = np.searchsorted(df["VideoTimeSecs"], int(frametime)) - 1
-        datatime = df["VideoTimeSecs"][dataindex]
-    writedataline("~ DATA ~", 5, GREEN)
-    writedataline("Time: {:04.0f}s/{:.0f}s".format(datatime, max(df["VideoTimeSecs"])), 6, GREEN)
-    writedataline("Dist: {: 04.0f}.{:02.0f}m".format(df["Dist"][dataindex], abs(df["Dist"][dataindex] * 100) % 100),
-                  7, GREEN)
-    writedataline("Depth: {:.2f}m".format(df["Depth"][dataindex]), 8, GREEN)
-    writedataline("Temp: {:.4f}°C".format(df["Temp"][dataindex]), 9, GREEN)
-    writedataline("~ CALC ~", 11, CYAN)
-    writedataline("px per cm: {:.3f}".format(scalebar / 10), 12, CYAN)
-    pygame.display.flip()
-    prevkeys = keys.copy()
-    for e in pygame.event.get():
-        if e.type == QUIT:
-            quit()
-        elif e.type == KEYDOWN:
-            keys.add(e.key)
-            if e.key == K_ESCAPE:
+            dataindex = np.searchsorted(dfenv["VideoTimeSecs"], int(frametime)) - 1
+            datatime = dfenv["VideoTimeSecs"][dataindex]
+        writedataline("~ DATA ~", 5, GREEN)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(datatime, max(dfenv["VideoTimeSecs"])), 6, GREEN)
+        writedataline("Dist: {: 04.0f}.{:02.0f}m".format(dfenv["Dist"][dataindex], abs(dfenv["Dist"][dataindex] * 100) % 100),
+                      7, GREEN)
+        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataindex]), 8, GREEN)
+        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataindex]), 9, GREEN)
+        writedataline("~ CALC ~", 11, CYAN)
+        writedataline("px per cm: {:.3f}".format(scalebar / 10), 12, CYAN)
+        pygame.display.flip()
+        prevkeys = keys.copy()
+        for e in pygame.event.get():
+            if e.type == QUIT:
                 quit()
-        elif e.type == KEYUP:
-            keys.discard(e.key)
+            elif e.type == KEYDOWN:
+                keys.add(e.key)
+                if e.key == K_ESCAPE:
+                    quit()
+            elif e.type == KEYUP:
+                keys.discard(e.key)
+finally:
+    print("Saving DataFrame to AllData.csv")
+    dfout.to_csv("AllData.csv", na_rep="nan", index=False,
+                 columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist", "Lat", "Lon", *faunanames,
+                          "Depth", "Temp", "Salinity", "ScalePx", "ScaleOK", "LastEdited"])
 
 """
 https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
