@@ -51,6 +51,7 @@ pygame.display.set_caption("VIDEO", "Video")
 print("{:.0f} frames ({:.0f} x {:.0f}) at {} FPS".format(capn, capw, caph, capfps))
 
 
+# Read the next frame from the video, moving to location specified by pos if required
 def getnewframe(pos=None):
     if pos is not None:
         if pos < 0:
@@ -65,6 +66,7 @@ def getnewframe(pos=None):
     return pos, frame
 
 
+# Write to the data display panel
 def writedataline(text, lineno, col=WHITE):
     dataport.blit(textfont.render(text, True, col), (20, 30 * lineno))
 
@@ -76,8 +78,9 @@ redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 # Set initial state of playback
 pause = True
 showreticle = True
-pos, frame = getnewframe(0)
-cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+startpos = 45900
+pos, frame = getnewframe(startpos)
+cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 skipspeed = 5
 
 # Create DataFrame for per-frame output data
@@ -241,6 +244,4 @@ finally:
             time.sleep(5)
     print("Save completed")
 
-"""
-https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
-"""
+# https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
