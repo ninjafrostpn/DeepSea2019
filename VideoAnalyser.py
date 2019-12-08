@@ -4,11 +4,16 @@ import numpy as np
 import pandas as pd
 import pygame
 from pygame.locals import *
+import re
 from scipy.ndimage.filters import convolve
 import time
 
 # Function for converting HH:MM:SS to total seconds
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
+
+# Extracts version number from a filename
+filenomatcher = re.compile("-[0-9]\.")
+getfileno = lambda x: int(filenomatcher.search(x)[0][1:-1])
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
 dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
@@ -85,14 +90,12 @@ coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in
                "ScaleOK": -1, **{i: np.nan for i in scalestats},
                "LastEdited": "nan", **{name: 0 for name in faunanames}}
 try:
-    # TODO: Find a sort that actually works with numbered files with 2 digits or more
-    csvnames = sorted(glob("AllData{:.0f}-*.csv".format(skipspeed)))
+    csvnames = sorted(glob("AllData{:.0f}-*.csv".format(skipspeed)), key=getfileno)
     if len(csvnames) == 0:
         raise FileNotFoundError
     csvinname = csvnames[-1]
     dfout = pd.read_csv(csvinname)
-    csvoutname = "AllData{:.0f}-{}.csv".format(skipspeed,
-                                               int(csvinname[csvinname.index("-") + 1:csvinname.index(".")]) + 1)
+    csvoutname = "AllData{:.0f}-{}.csv".format(skipspeed, getfileno(csvinname) + 1)
     print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvoutname)
     if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
         raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvoutname))
