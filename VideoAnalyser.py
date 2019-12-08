@@ -8,20 +8,15 @@ import re
 from scipy.ndimage.filters import convolve
 import time
 
+# Initialise window
+pygame.init()
+
 # Function for converting HH:MM:SS to total seconds
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
 
 # Extracts version number from a filename
 filenomatcher = re.compile("-[0-9]*\.")
 getfileno = lambda x: int(filenomatcher.search(x)[0][1:-1])
-
-# Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
-dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
-dfenv.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", "Salinity"]
-dfenv = dfenv.assign(VideoTimeSecs=timetosec(dfenv["VideoTime"]))
-
-# Initialise window
-pygame.init()
 
 # Keys pressed in the frame just shown...
 keys = set()
@@ -33,6 +28,8 @@ WHITE = np.int32([255] * 3)
 GREEN = np.int32([0, 255, 0])
 CYAN = np.int32([0, 255, 255])
 MAGENTA = np.int32([255, 0, 255])
+RED = np.int32([255, 0, 0])
+BLUE = np.int32([0, 0, 255])
 
 # Font for drawing text with
 textfont = pygame.font.Font(None, 30)
@@ -83,6 +80,27 @@ pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 skipspeed = 5
 
+# Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
+dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
+dfenv.columns = ["ActualTime", "VideoTime", "Lat", "Lon", "Dist", "Depth", "Temp", "Salinity"]
+dfenv = dfenv.assign(VideoTimeSecs=timetosec(dfenv["VideoTime"]))
+minigraph = pygame.Surface([300, caph - 420])
+scaledsalinity = 30 - (dfenv["Salinity"] - min(dfenv["Salinity"])) * 100
+scaledtemp = 126 - (dfenv["Temp"] - min(dfenv["Temp"])) * 300
+scaleddepth = (dfenv["Depth"] - min(dfenv["Depth"])) * 1.2
+for i in range(dfenv.shape[0] - 1):
+    pygame.draw.line(minigraph, GREEN / 2,
+                     [dfenv["Dist"][i], scaledsalinity[i]],
+                     [dfenv["Dist"][i + 1], scaledsalinity[i + 1]])
+for i in range(dfenv.shape[0] - 1):
+    pygame.draw.line(minigraph, RED,
+                     [dfenv["Dist"][i], scaledtemp[i]],
+                     [dfenv["Dist"][i + 1], scaledtemp[i + 1]])
+for i in range(dfenv.shape[0] - 1):
+    pygame.draw.line(minigraph, BLUE,
+                     [dfenv["Dist"][i], scaleddepth[i]],
+                     [dfenv["Dist"][i + 1], scaleddepth[i + 1]])
+
 # Create DataFrame for per-frame output data
 # The ScaleOK column ought to be switched to False where the script has picked up incorrectly
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
@@ -117,6 +135,8 @@ dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
 
 try:
     while True:
+        mousepos = pygame.mouse.get_pos()
+        # TODO: Actually add facility to record animal sightings, since that's the point of this application!
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
             pause = not pause
@@ -177,11 +197,15 @@ try:
             # Draw dot-finder reticle
             pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 1)
             pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 1)
-            pygame.draw.circle(viewport, WHITE, upperdot, 20, 1)
-            pygame.draw.circle(viewport, WHITE, lowerdot, 20, 1)
-            pygame.draw.line(viewport, WHITE, lowerdot, upperdot, 1)
-            pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
-            viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
+            pygame.draw.circle(viewport, MAGENTA, upperdot, 20, 1)
+            pygame.draw.circle(viewport, MAGENTA, lowerdot, 20, 1)
+            pygame.draw.line(viewport, CYAN, lowerdot, upperdot, 1)
+            if viewport.get_rect().collidepoint(mousepos):
+                pygame.draw.rect(viewport, WHITE, [*mousepos, scalebar, scalebar], 1)
+                viewport.blit(textfont.render("10 x 10", True, WHITE), [mousepos[0], mousepos[1] + scalebar])
+            else:
+                pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
+                viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
             # If you can see the dots, it gives its opinion on their OKness according to x difference
             # (if you've not offered an opinion before, but will change its own verdicts)
             oldverdict = dfout.loc[dataoutindex, "ScaleOK"]
@@ -193,10 +217,12 @@ try:
         dfout.loc[dataoutindex, scalestats] = [scalebar, scalebar * 10, *upperdot, *lowerdot]
         dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         # Show Video stats on screen
-        # TODO: Add little loading-bar/range-bar -esque elements to accompany data
-        writedataline("~ VIDEO ~", 1)
-        writedataline("Frame: {:05.0f}/{:.0f}".format(pos, capn), 2)
-        writedataline("Time: {:04.0f}s/{:.0f}s".format(pos / capfps, capn / capfps), 3)
+        writedataline("~ VIDEO ~", 0.5)
+        writedataline("Frame: {:05.0f}/{:.0f}".format(pos, capn), 1.5)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(pos / capfps, capn / capfps), 2.5)
+        writedataline("px per m: {:.3f}".format(scalebar * 10), 3.5, CYAN)
+        verdict = dfout.loc[dataoutindex, "ScaleOK"]
+        writedataline("ScaleOK: {}{}".format(verdict > 0, " (?)" if not (verdict in [0, 1]) else ""), 4.5, MAGENTA)
         frametime = pos / capfps
         if int(frametime) in dfenv["VideoTimeSecs"]:
             dataenvindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
@@ -207,18 +233,25 @@ try:
         # Store the environmental stats from the xlsx in the output csv
         dfout.loc[dataoutindex, dfenv.columns] = dfenv.loc[dataenvindex]
         dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        writedataline("~ ENVDATA ~", 5, GREEN)
-        writedataline("Time: {:04.0f}s/{:.0f}s".format(dataenvtime, max(dfenv["VideoTimeSecs"])), 6, GREEN)
+        writedataline("~ ENVDATA ~", 6, WHITE)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(dataenvtime, max(dfenv["VideoTimeSecs"])), 7, WHITE)
         writedataline("Dist: {: 04.0f}.{:02.0f}m".format(dfenv["Dist"][dataenvindex],
                                                          abs(dfenv["Dist"][dataenvindex] * 100) % 100),
-                      7, GREEN)
-        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 8, GREEN)
-        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 9, GREEN)
-        writedataline("~ CALC ~", 11, CYAN)
-        writedataline("px per m: {:.3f}".format(scalebar * 10), 12, CYAN)
-        writedataline("~ DATAOUT ~", 14, MAGENTA)
-        verdict = dfout.loc[dataoutindex, "ScaleOK"]
-        writedataline("ScaleOK: {}{}".format(verdict > 0, " (?)" if not (verdict in [0, 1]) else ""), 15, MAGENTA)
+                      8, WHITE)
+        writedataline("Salinity: {:.4f}".format(dfenv["Salinity"][dataenvindex]), 9, GREEN / 2)
+        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 10, BLUE)
+        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 11, RED)
+
+        dataport.blit(minigraph, (0, 420))
+        pygame.draw.line(dataport, WHITE, [dfenv["Dist"][dataenvindex], 420], [dfenv["Dist"][dataenvindex], caph])
+        pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]),
+                                             int(scaledsalinity[dataenvindex]) + 420], 5)
+        pygame.draw.circle(dataport, GREEN / 2, [int(dfenv["Dist"][dataenvindex]),
+                                                 int(scaledsalinity[dataenvindex]) + 420], 3)
+        pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]), int(scaledtemp[dataenvindex]) + 420], 5)
+        pygame.draw.circle(dataport, RED, [int(dfenv["Dist"][dataenvindex]), int(scaledtemp[dataenvindex]) + 420], 3)
+        pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 5)
+        pygame.draw.circle(dataport, BLUE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 3)
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
@@ -230,6 +263,13 @@ try:
                     quit()
             elif e.type == KEYUP:
                 keys.discard(e.key)
+            elif e.type == MOUSEBUTTONDOWN:
+                if viewport.get_rect().collidepoint(mousepos):
+                    # Pauses if you click on the video
+                    pause = not pause
+                    # Line up playback position with multiple of skipspeed if skipping has occurred while paused
+                    if pos == cap.get(cv2.CAP_PROP_POS_FRAMES):
+                        pos, frame = getnewframe()
 finally:
     unsaved = True
     while unsaved:
