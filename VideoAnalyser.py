@@ -1,4 +1,5 @@
 import cv2
+from glob import glob
 import numpy as np
 import pandas as pd
 import pygame
@@ -84,20 +85,27 @@ coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in
                "ScaleOK": -1, **{i: np.nan for i in scalestats},
                "LastEdited": "nan", **{name: 0 for name in faunanames}}
 try:
-    csvname = "AllData{:.0f}.csv".format(skipspeed)
-    dfout = pd.read_csv(csvname)
-    print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvname)
+    # TODO: Find a sort that actually works with numbered files with 2 digits or more
+    csvnames = sorted(glob("AllData{:.0f}-*.csv".format(skipspeed)))
+    if len(csvnames) == 0:
+        raise FileNotFoundError
+    csvinname = csvnames[-1]
+    dfout = pd.read_csv(csvinname)
+    csvoutname = "AllData{:.0f}-{}.csv".format(skipspeed,
+                                               int(csvinname[csvinname.index("-") + 1:csvinname.index(".")]) + 1)
+    print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvoutname)
     if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
-        raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvname))
+        raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvoutname))
     coldefaultskeys = np.object_(list(coldefaults.keys()))
     colsinmask = np.isin(coldefaultskeys, dfout.columns)
     if not np.all(colsinmask):
         print(coldefaultskeys[~colsinmask], "not found, adding")
         dfout = dfout.assign(**{key: coldefaults[key] for key in coldefaultskeys[~colsinmask]})
-    print("Loaded in", csvname)
+    print("Loaded in", csvinname)
 except FileNotFoundError:
-    print("{} frames displayed and in".format(np.ceil(capn / skipspeed)), csvname)
-    print("No {} found, creating new DataFrame".format(csvname))
+    csvoutname = "AllData{:.0f}-0.csv".format(skipspeed)
+    print("{} frames displayed and in".format(np.ceil(capn / skipspeed)), csvoutname)
+    print("No {} found, creating new DataFrame".format(csvoutname))
     dfout = pd.DataFrame(coldefaults)
 dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
 
@@ -217,11 +225,18 @@ try:
             elif e.type == KEYUP:
                 keys.discard(e.key)
 finally:
-    # TODO: Add failsafe for if the file is open elsewhere
-    print("Saving DataFrame to", csvname)
-    dfout.to_csv(csvname, na_rep="nan", index=False,
-                 columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist", "Lat", "Lon", *faunanames,
-                          "Depth", "Temp", "Salinity", *scalestats, "ScaleOK", "LastEdited"])
+    unsaved = True
+    while unsaved:
+        try:
+            print("Saving DataFrame to", csvoutname)
+            dfout.to_csv(csvoutname, na_rep="nan", index=False,
+                         columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist", "Lat", "Lon",
+                                  *faunanames, "Depth", "Temp", "Salinity", *scalestats, "ScaleOK", "LastEdited"])
+            unsaved = False
+        except PermissionError:
+            print(csvoutname, "might be open elsewhere, waiting for you to close it...")
+            time.sleep(5)
+    print("Save completed")
 
 """
 https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
