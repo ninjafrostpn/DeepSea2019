@@ -4,6 +4,7 @@ import pandas as pd
 import pygame
 from pygame.locals import *
 from scipy.ndimage.filters import convolve
+import time
 
 # Function for converting HH:MM:SS to total seconds
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
@@ -25,6 +26,7 @@ prevkeys = set()
 WHITE = np.int32([255] * 3)
 GREEN = np.int32([0, 255, 0])
 CYAN = np.int32([0, 255, 255])
+MAGENTA = np.int32([255, 0, 255])
 
 # Font for drawing text with
 textfont = pygame.font.Font(None, 30)
@@ -68,40 +70,57 @@ redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 # Set initial state of playback
 pause = True
 showreticle = True
-pos, frame = getnewframe(9200)
-cap.set(cv2.CAP_PROP_POS_FRAMES, 9200)
+pos, frame = getnewframe(0)
+cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 skipspeed = 5
 
 # Create DataFrame for per-frame output data
 # The ScaleOK column ought to be switched to False where the script has picked up incorrectly
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
+scalestats = ["ScalePX", "ScalePX/m", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
 faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "Squeed"]
+# For ScaleOK, -1 represents unchecked, -2 or 2 represent bad/good autocheck, 0 or 1 represent confirmed bad/good
 coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in dfenv.columns},
-               "ScalePx": np.nan, "ScaleOK": True, "LastEdited": "nan", **{name: 0 for name in faunanames}}
+               "ScaleOK": -1, **{i: np.nan for i in scalestats},
+               "LastEdited": "nan", **{name: 0 for name in faunanames}}
 try:
-    dfout = pd.read_csv("AllData.csv")
-    print("{} frames displayed, {} in AllData.csv".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)))
+    csvname = "AllData{:.0f}.csv".format(skipspeed)
+    dfout = pd.read_csv(csvname)
+    print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvname)
     if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
-        raise Exception("AllData.csv's Frame Count or Resolution Doesn't Match Analyser Setting")
+        raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvname))
     coldefaultskeys = np.object_(list(coldefaults.keys()))
     colsinmask = np.isin(coldefaultskeys, dfout.columns)
     if not np.all(colsinmask):
         print(coldefaultskeys[~colsinmask], "not found, adding")
         dfout = dfout.assign(**{key: coldefaults[key] for key in coldefaultskeys[~colsinmask]})
-    print("Loaded in AllData.csv")
+    print("Loaded in", csvname)
 except FileNotFoundError:
-    print("{} frames displayed and in AllData.csv".format(np.ceil(capn / skipspeed)))
-    print("No AllData.csv found, creating new DataFrame")
+    print("{} frames displayed and in".format(np.ceil(capn / skipspeed)), csvname)
+    print("No {} found, creating new DataFrame".format(csvname))
     dfout = pd.DataFrame(coldefaults)
+dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
 
 try:
     while True:
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
             pause = not pause
+            # Line up playback position with multiple of skipspeed if skipping has occurred while paused
+            if pos == cap.get(cv2.CAP_PROP_POS_FRAMES):
+                pos, frame = getnewframe()
         if K_TAB in keys and K_TAB not in prevkeys:
             # Tab to toggle video reticle
             showreticle = not showreticle
+        if K_RSHIFT in keys and K_RSHIFT not in prevkeys:
+            # Right shift to toggle decision on Scale OKness
+            oldverdict = dfout.loc[dataoutindex, "ScaleOK"]
+            if oldverdict <= 0:
+                dfout.loc[dataoutindex, "ScaleOK"] = 1
+            else:
+                dfout.loc[dataoutindex, "ScaleOK"] = 0
+            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
         if K_RIGHT in keys:
             # Skip forward with right arrow key
             if pause:
@@ -123,6 +142,9 @@ try:
             # (elif, not if, to allow skipping back to frame 0)
             for i in range(skipspeed):
                 pos, frame = getnewframe()
+        # Get the row to write the output data to
+        dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
+        # Clear the window
         screen.fill(0)
         pframe = pygame.surfarray.make_surface(frame)
         # Look for the red dots in the "middle half" of the image area
@@ -146,25 +168,43 @@ try:
             pygame.draw.line(viewport, WHITE, lowerdot, upperdot, 1)
             pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
             viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
+            # If you can see the dots, it gives its opinion on their OKness according to x difference
+            # (if you've not offered an opinion before, but will change its own verdicts)
+            oldverdict = dfout.loc[dataoutindex, "ScaleOK"]
+            if np.isnan(oldverdict) or abs(oldverdict) == 2:
+                # Offers good (2) if x difference is less than y difference over 2, else bad (-2)
+                # TODO: Add check for one dot being deflected up or down
+                dfout.loc[dataoutindex, "ScaleOK"] = [-2, 2][int(abs(np.divide(*(upperdot - lowerdot))) < 0.5)]
+        # Store the scalebar stats
+        dfout.loc[dataoutindex, scalestats] = [scalebar, scalebar * 10, *upperdot, *lowerdot]
+        dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        # Show Video stats on screen
         # TODO: Add little loading-bar/range-bar -esque elements to accompany data
         writedataline("~ VIDEO ~", 1)
         writedataline("Frame: {:05.0f}/{:.0f}".format(pos, capn), 2)
         writedataline("Time: {:04.0f}s/{:.0f}s".format(pos / capfps, capn / capfps), 3)
         frametime = pos / capfps
         if int(frametime) in dfenv["VideoTimeSecs"]:
-            dataindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
-            datatime = int(frametime)
+            dataenvindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
+            dataenvtime = int(frametime)
         else:
-            dataindex = np.searchsorted(dfenv["VideoTimeSecs"], int(frametime)) - 1
-            datatime = dfenv["VideoTimeSecs"][dataindex]
-        writedataline("~ DATA ~", 5, GREEN)
-        writedataline("Time: {:04.0f}s/{:.0f}s".format(datatime, max(dfenv["VideoTimeSecs"])), 6, GREEN)
-        writedataline("Dist: {: 04.0f}.{:02.0f}m".format(dfenv["Dist"][dataindex], abs(dfenv["Dist"][dataindex] * 100) % 100),
+            dataenvindex = np.searchsorted(dfenv["VideoTimeSecs"], int(frametime)) - 1
+            dataenvtime = dfenv["VideoTimeSecs"][dataenvindex]
+        # Store the environmental stats from the xlsx in the output csv
+        dfout.loc[dataoutindex, dfenv.columns] = dfenv.loc[dataenvindex]
+        dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        writedataline("~ ENVDATA ~", 5, GREEN)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(dataenvtime, max(dfenv["VideoTimeSecs"])), 6, GREEN)
+        writedataline("Dist: {: 04.0f}.{:02.0f}m".format(dfenv["Dist"][dataenvindex],
+                                                         abs(dfenv["Dist"][dataenvindex] * 100) % 100),
                       7, GREEN)
-        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataindex]), 8, GREEN)
-        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataindex]), 9, GREEN)
+        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 8, GREEN)
+        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 9, GREEN)
         writedataline("~ CALC ~", 11, CYAN)
-        writedataline("px per cm: {:.3f}".format(scalebar / 10), 12, CYAN)
+        writedataline("px per m: {:.3f}".format(scalebar * 10), 12, CYAN)
+        writedataline("~ DATAOUT ~", 14, MAGENTA)
+        verdict = dfout.loc[dataoutindex, "ScaleOK"]
+        writedataline("ScaleOK: {}{}".format(verdict > 0, " (?)" if not (verdict in [0, 1]) else ""), 15, MAGENTA)
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
@@ -177,10 +217,11 @@ try:
             elif e.type == KEYUP:
                 keys.discard(e.key)
 finally:
-    print("Saving DataFrame to AllData.csv")
-    dfout.to_csv("AllData.csv", na_rep="nan", index=False,
+    # TODO: Add failsafe for if the file is open elsewhere
+    print("Saving DataFrame to", csvname)
+    dfout.to_csv(csvname, na_rep="nan", index=False,
                  columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist", "Lat", "Lon", *faunanames,
-                          "Depth", "Temp", "Salinity", "ScalePx", "ScaleOK", "LastEdited"])
+                          "Depth", "Temp", "Salinity", *scalestats, "ScaleOK", "LastEdited"])
 
 """
 https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
