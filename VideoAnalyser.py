@@ -129,8 +129,11 @@ try:
         redness = np.sum(frame[330:700, 144:432] * [1, -0.5, -0.5], axis=2)
         dotlikeness = convolve(redness, redblobfinder, mode="constant", cval=0)
         # First-guess upper and lower dots' positions
-        upperdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, :144]), (700, 144))) + (330, 144)
-        lowerdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, 144:]), (700, 144))) + (330, 288)
+        # (Includes likelihood of the two dots being in the same x location)
+        upperdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, :144] + dotlikeness[:, :143:-1] / 5),
+                                             (700, 144))) + (330, 144)
+        lowerdot = np.int32(np.unravel_index(np.argmax(dotlikeness[:, 144:] + dotlikeness[:, 143::-1] / 5),
+                                             (700, 144))) + (330, 288)
         # Draw video frame to screen
         viewport.blit(pframe, (0, 0))
         scalebar = np.linalg.norm(upperdot - lowerdot)
