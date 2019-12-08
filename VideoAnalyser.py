@@ -12,7 +12,7 @@ import time
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
 
 # Extracts version number from a filename
-filenomatcher = re.compile("-[0-9]\.")
+filenomatcher = re.compile("-[0-9]*\.")
 getfileno = lambda x: int(filenomatcher.search(x)[0][1:-1])
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
