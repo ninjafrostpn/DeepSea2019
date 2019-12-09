@@ -23,6 +23,7 @@ keys = set()
 # ...and the one before that (for good edge detection)
 prevkeys = set()
 numberkeys = [i for i in range(K_1, K_9 + 1)] + [K_0]
+toprowkeys = [K_q, K_w, K_e, K_r]
 
 # Colours
 WHITE = np.int32([255] * 3)
@@ -77,7 +78,7 @@ redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 pause = True
 showreticle = True
 startpos = 0
-skipspeed = 10000
+skipspeed = int(30 * capfps)  # A frame every 30 sec
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 faunaindex = 0
@@ -107,25 +108,26 @@ for i in range(dfenv.shape[0] - 1):
 # Create DataFrame for per-frame output data
 # The ScaleOK column ought to be switched to False where the script has picked up incorrectly
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
+# The Cover columns give 0 as not present, 1 as present
 scalestats = ["ScalePX", "ScalePX/m", "AreaEstimate", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
-faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "Squeed"]
+faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "BigSqueed"]
+covertypes = ["HardBtm", "SoftBtm", "Clams", "Bacteria"]
 # For ScaleOK, -1 represents unchecked, -2 or 2 represent bad/good autocheck, 0 or 1 represent confirmed bad/good
-coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in dfenv.columns},
+# For Done, 0 represents incomplete, 1 represents complete for count check, lasers check and cover check
+coldefaults = {"Frame": np.arange(capn), **{col: np.nan for col in dfenv.columns},
                "ScaleOK": -1, **{i: np.nan for i in scalestats},
-               "LastEdited": "nan", **{name: 0 for name in faunanames}}
+               **{name: 0 for name in faunanames},
+               **{covertype: 0 for covertype in covertypes},
+               "Done": 0, "LastEdited": "nan"}
 try:
     # Filenames are of format "AllDataX[Y]-Z.csv", where X is the skipspeed, Y is the frameoffset, Z is the version nr
-    print(skipspeed, frameoffset, r"AllData{:.0f}\[{}\]-*.csv".format(skipspeed, frameoffset))
-    csvnames = sorted(glob("AllData{:.0f}({})-*.csv".format(skipspeed, frameoffset)), key=getfileno)
+    csvnames = sorted(glob("AllData-*.csv"), key=getfileno)
     if len(csvnames) == 0:
         csvinname = "Matching Files"
         raise FileNotFoundError
     csvinname = csvnames[-1]
     dfout = pd.read_csv(csvinname)
-    csvoutname = "AllData{:.0f}({})-{}.csv".format(skipspeed, frameoffset, getfileno(csvinname) + 1)
-    print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvoutname)
-    if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
-        raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvoutname))
+    csvoutname = "AllData-{}.csv".format(getfileno(csvinname) + 1)
     coldefaultskeys = np.object_(list(coldefaults.keys()))
     colsinmask = np.isin(coldefaultskeys, dfout.columns)
     if not np.all(colsinmask):
@@ -133,7 +135,7 @@ try:
         dfout = dfout.assign(**{key: coldefaults[key] for key in coldefaultskeys[~colsinmask]})
     print("Loaded in", csvinname)
 except FileNotFoundError:
-    csvoutname = "AllData{:.0f}({})-0.csv".format(skipspeed, frameoffset)
+    csvoutname = "AllData-0.csv"
     print("No {} found, creating new DataFrame".format(csvinname))
     print("{} frames displayed and in".format(np.ceil(capn / skipspeed)), csvoutname)
     dfout = pd.DataFrame(coldefaults)
@@ -148,6 +150,18 @@ try:
         if len(numberspressed) > 0:
             # Number keys select that numbered faunal record
             faunaindex = numberkeys.index(numberspressed[0])
+        toprowkeyspressed = list(keys.intersection(toprowkeys))
+        if len(toprowkeyspressed) > 0:
+            # Letter keys on top row toggle bottom types
+            for toprowkey in toprowkeyspressed:
+                covertype = covertypes[toprowkeys.index(toprowkey)]
+                oldverdict = dfout.loc[dataoutindex, covertype]
+                if oldverdict <= 0:
+                    dfout.loc[dataoutindex, covertype] = 1
+                else:
+                    dfout.loc[dataoutindex, covertype] = 0
+                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
         # These two are placed here (before updat of dataoutindex)so that they get the previous frame
         # (when the key was pressed) before the next one is drawn
         if K_UP in keys and K_UP not in prevkeys:
@@ -174,6 +188,15 @@ try:
                 dfout.loc[dataoutindex, "ScaleOK"] = 1
             else:
                 dfout.loc[dataoutindex, "ScaleOK"] = 0
+            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
+        if K_RETURN in keys and K_RETURN not in prevkeys:
+            # Enter to register/deregister count completeness
+            oldverdict = dfout.loc[dataoutindex, "Done"]
+            if oldverdict == 0:
+                dfout.loc[dataoutindex, "Done"] = 1
+            else:
+                dfout.loc[dataoutindex, "Done"] = 0
             dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
             print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
         if K_RIGHT in keys:
@@ -235,7 +258,7 @@ try:
             # If you can see the dots, it gives its opinion on their OKness according to x difference
             # (if you've not offered an opinion before, but will change its own verdicts)
             oldverdict = dfout.loc[dataoutindex, "ScaleOK"]
-            if np.isnan(oldverdict) or abs(oldverdict) == 2:
+            if oldverdict in [-2, -1, 2]:
                 # Offers good (2) if x difference is less than y difference over 2, else bad (-2)
                 # TODO: Add check for one dot being deflected up or down
                 dfout.loc[dataoutindex, "ScaleOK"] = [-2, 2][int(abs(np.divide(*(upperdot - lowerdot))) < 0.5)]
@@ -252,6 +275,7 @@ try:
         writedataline("px per m: {:.3f}".format(scalebar * 10), 3.5, CYAN)
         verdict = dfout.loc[dataoutindex, "ScaleOK"]
         writedataline("ScaleOK: {}{}".format(verdict > 0, " (?)" if not (verdict in [0, 1]) else ""), 4.5, MAGENTA)
+        writedataline("FrameSkip: {} ({} left)".format(skipspeed, np.ceil((capn - pos) / skipspeed)), 5.5)
         frametime = pos / capfps
         if int(frametime) in dfenv["VideoTimeSecs"]:
             dataenvindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
@@ -262,14 +286,14 @@ try:
         # Store the environmental stats from the xlsx in the output csv
         dfout.loc[dataoutindex, dfenv.columns] = dfenv.loc[dataenvindex]
         dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        writedataline("~ ENVDATA ~", 6, WHITE)
-        writedataline("Time: {:04.0f}s/{:.0f}s".format(dataenvtime, max(dfenv["VideoTimeSecs"])), 7, WHITE)
+        writedataline("~ ENVDATA ~", 7, WHITE)
+        writedataline("Time: {:04.0f}s/{:.0f}s".format(dataenvtime, max(dfenv["VideoTimeSecs"])), 8, WHITE)
         writedataline("Dist: {: 04.0f}.{:02.0f}m".format(dfenv["Dist"][dataenvindex],
                                                          abs(dfenv["Dist"][dataenvindex] * 100) % 100),
-                      8, WHITE)
-        writedataline("Salinity: {:.4f}".format(dfenv["Salinity"][dataenvindex]), 9, GREEN / 2)
-        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 10, BLUE)
-        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 11, RED)
+                      9, WHITE)
+        writedataline("Salinity: {:.4f}".format(dfenv["Salinity"][dataenvindex]), 10, GREEN / 2)
+        writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 11, BLUE)
+        writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 12, RED)
         dataport.blit(minigraph, (0, 420))
         pygame.draw.line(dataport, WHITE, [dfenv["Dist"][dataenvindex], 420], [dfenv["Dist"][dataenvindex], caph])
         pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]),
@@ -282,20 +306,26 @@ try:
         pygame.draw.circle(dataport, BLUE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 3)
         # Draw in faunal records
         writedataline("~ FAUNA ~", 0.5, port=faunaport)
+        writedataline("Done: {}".format("YES" if dfout.loc[dataoutindex, "Done"] else "NO"),
+                      1.5, port=faunaport)
+        for i, covertype in enumerate(covertypes):
+            selectedcol = GREEN if dfout.loc[dataoutindex, covertype] == 1 else RED
+            writedataline("{} - {}".format(chr(toprowkeys[i]), covertype),
+                          i + 2.5, selectedcol, faunaport)
         barwidth = 0.5 * faunaport.get_width() / (len(faunanames) + 1)
         for i, name in enumerate(faunanames):
             selectedcol = WHITE if faunaindex == i else WHITE / 2
-            writedataline("{} - {}: {:d} ({})".format(i + 1, name,
-                                                      dfout.loc[dataoutindex, name],
-                                                      sum(dfout.loc[:dataoutindex, name])),
-                          i + 1.5, selectedcol, faunaport)
+            writedataline("{} - {}: {} ({})".format(i + 1, name,
+                                                    dfout.loc[dataoutindex, name],
+                                                    sum(dfout.loc[:dataoutindex, name])),
+                          i + 2.5 + len(covertypes), selectedcol, faunaport)
             pygame.draw.rect(faunaport, selectedcol,
-                             [((2 * i) + 1) * barwidth, caph, barwidth, -2 * sum(dfout.loc[:dataoutindex, name])], 1)
+                             [((2 * i) + 1) * barwidth, caph, barwidth, -sum(dfout.loc[:dataoutindex, name])], 1)
             pygame.draw.rect(faunaport, selectedcol,
-                             [((2 * i) + 1) * barwidth, caph, barwidth, -2 * dfout.loc[dataoutindex, name]])
+                             [((2 * i) + 1) * barwidth, caph, barwidth, -dfout.loc[dataoutindex, name]])
             num = textfont.render(str(i + 1), True, selectedcol)
             faunaport.blit(num, [(((2 * i) + 1.5) * barwidth) - (num.get_width() / 2),
-                                 caph - (2 * sum(dfout.loc[:dataoutindex, name])) - num.get_height()])
+                                 caph - sum(dfout.loc[:dataoutindex, name]) - num.get_height()])
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
@@ -321,8 +351,12 @@ finally:
         try:
             print("Saving DataFrame to", csvoutname)
             dfout.to_csv(csvoutname, na_rep="nan", index=False,
-                         columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist", "Lat", "Lon",
-                                  *faunanames, "Depth", "Temp", "Salinity", *scalestats, "ScaleOK", "LastEdited"])
+                         columns=["Frame", "VideoTimeSecs", "VideoTime", "ActualTime", "Dist",
+                                  "Lat", "Lon",
+                                  *faunanames, *covertypes,
+                                  "Depth", "Temp", "Salinity",
+                                  *scalestats, "ScaleOK",
+                                  "Done", "LastEdited"])
             unsaved = False
         except PermissionError:
             print(csvoutname, "might be open elsewhere, waiting for you to close it...")
