@@ -23,7 +23,7 @@ keys = set()
 # ...and the one before that (for good edge detection)
 prevkeys = set()
 numberkeys = [i for i in range(K_1, K_9 + 1)] + [K_0]
-toprowkeys = [K_q, K_w, K_e, K_r]
+toprowkeys = [K_q, K_w, K_e, K_r, K_t, K_y]
 
 # Colours
 WHITE = np.int32([255] * 3)
@@ -34,7 +34,7 @@ RED = np.int32([255, 0, 0])
 BLUE = np.int32([0, 0, 255])
 
 # Font for drawing text with
-textfont = pygame.font.Font(None, 30)
+textfont = pygame.font.Font(None, 25)
 
 # Initialise all window and video-getting tools
 cap = cv2.VideoCapture("IsisROV_dive148_TRANSECT.m4v")
@@ -67,7 +67,7 @@ def getnewframe(newpos=None):
 
 # Write to the data display panel
 def writedataline(text, lineno, col=WHITE, port=dataport):
-    port.blit(textfont.render(text, True, col), (20, 30 * lineno))
+    port.blit(textfont.render(text, True, col), (20, 25 * lineno))
 
 
 # Blob-shaped filter used to find red blobs
@@ -82,6 +82,7 @@ skipspeed = int(30 * capfps)  # A frame every 30 sec
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 faunaindex = 0
+faunaoffset = 0
 frameoffset = startpos % skipspeed
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
@@ -110,8 +111,9 @@ for i in range(dfenv.shape[0] - 1):
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
 # The Cover columns give 0 as not present, 1 as present
 scalestats = ["ScalePX", "ScalePX/m", "AreaEstimate", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
-faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "BigSqueed"]
-covertypes = ["HardBtm", "SoftBtm", "Clams", "Bacteria"]
+faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "ChonkAnemone", "MudAnemone", "Ophi",
+              "Feesh", "BigSqueed", "SmolSqueed", "Blueb", "TinyWhite", "SeaSosig"]
+covertypes = ["HardBtm", "SoftBtm", "Clams", "Bacteria", "Query", "Unusable"]
 # For ScaleOK, -1 represents unchecked, -2 or 2 represent bad/good autocheck, 0 or 1 represent confirmed bad/good
 # For Done, 0 represents incomplete, 1 represents complete for count check, lasers check and cover check
 coldefaults = {"Frame": np.arange(capn), **{col: np.nan for col in dfenv.columns},
@@ -161,17 +163,25 @@ try:
                 else:
                     dfout.loc[dataoutindex, covertype] = 0
                 dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
-        # These two are placed here (before updat of dataoutindex)so that they get the previous frame
-        # (when the key was pressed) before the next one is drawn
-        if K_UP in keys and K_UP not in prevkeys:
-            # Up key adds a count for the selected faunal record
-            dfout.loc[dataoutindex, faunanames[faunaindex]] += 1
-            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        if K_DOWN in keys and K_DOWN not in prevkeys:
-            # Up key removes a count for the selected faunal record
-            dfout.loc[dataoutindex, faunanames[faunaindex]] -= 1
-            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        if K_COMMA in keys and K_COMMA not in prevkeys:
+            # Comma key to move fauna selector numbers up (because it has the < symbol on it)
+            if faunaoffset - 9 >= 0:
+                faunaoffset -= 9
+        if K_PERIOD in keys and K_PERIOD not in prevkeys:
+            # Comma key to move fauna selector numbers down (because it has the > symbol on it)
+            if faunaoffset + 9 < len(faunanames):
+                faunaoffset += 9
+        if 0 <= faunaindex + faunaoffset < len(faunanames):
+            # These two are placed here (before update of dataoutindex)so that they get the previous frame
+            # (when the key was pressed) before the next one is drawn
+            if K_UP in keys and K_UP not in prevkeys:
+                # Up key adds a count for the selected faunal record
+                dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] += 1
+                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            if K_DOWN in keys and K_DOWN not in prevkeys:
+                # Up key removes a count for the selected faunal record
+                dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] -= 1
+                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
             pause = not pause
@@ -313,7 +323,7 @@ try:
             writedataline("{} - {}".format(chr(toprowkeys[i]), covertype),
                           i + 2.5, selectedcol, faunaport)
         barwidth = 0.5 * faunaport.get_width() / (len(faunanames) + 1)
-        for i, name in enumerate(faunanames):
+        for i, name in enumerate(faunanames[faunaoffset:faunaoffset + 9]):
             selectedcol = WHITE if faunaindex == i else WHITE / 2
             writedataline("{} - {}: {} ({})".format(i + 1, name,
                                                     dfout.loc[dataoutindex, name],
