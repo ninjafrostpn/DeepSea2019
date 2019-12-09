@@ -107,7 +107,7 @@ for i in range(dfenv.shape[0] - 1):
 # Create DataFrame for per-frame output data
 # The ScaleOK column ought to be switched to False where the script has picked up incorrectly
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
-scalestats = ["ScalePX", "ScalePX/m", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
+scalestats = ["ScalePX", "ScalePX/m", "AreaEstimate", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
 faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "Anemone", "Ophi", "Feesh", "Squeed"]
 # For ScaleOK, -1 represents unchecked, -2 or 2 represent bad/good autocheck, 0 or 1 represent confirmed bad/good
 coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in dfenv.columns},
@@ -240,7 +240,10 @@ try:
                 # TODO: Add check for one dot being deflected up or down
                 dfout.loc[dataoutindex, "ScaleOK"] = [-2, 2][int(abs(np.divide(*(upperdot - lowerdot))) < 0.5)]
         # Store the scalebar stats
-        dfout.loc[dataoutindex, scalestats] = [scalebar, scalebar * 10, *upperdot, *lowerdot]
+        # (L[px] / 10[cm]) * (100[cm] / [m]) = 10L[px] / [m]
+        # (X[px] * Y [px]) / ((10L[px] / [m]) ** 2) = 0.01(XY / (L**2))[m**2]
+        dfout.loc[dataoutindex, scalestats] = [scalebar, 10 * scalebar, (0.01 * capw * caph) / (scalebar ** 2),
+                                               *upperdot, *lowerdot]
         dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         # Show Video stats on screen
         writedataline("~ VIDEO ~", 0.5)
@@ -286,6 +289,8 @@ try:
                                                       dfout.loc[dataoutindex, name],
                                                       sum(dfout.loc[:dataoutindex, name])),
                           i + 1.5, selectedcol, faunaport)
+            pygame.draw.rect(faunaport, selectedcol,
+                             [((2 * i) + 1) * barwidth, caph, barwidth, -2 * sum(dfout.loc[:dataoutindex, name])], 1)
             pygame.draw.rect(faunaport, selectedcol,
                              [((2 * i) + 1) * barwidth, caph, barwidth, -2 * dfout.loc[dataoutindex, name]])
             num = textfont.render(str(i + 1), True, selectedcol)
