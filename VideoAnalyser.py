@@ -22,6 +22,7 @@ getfileno = lambda x: int(filenomatcher.search(x)[0][1:-1])
 keys = set()
 # ...and the one before that (for good edge detection)
 prevkeys = set()
+numberkeys = [i for i in range(K_1, K_9 + 1)] + [K_0]
 
 # Colours
 WHITE = np.int32([255] * 3)
@@ -40,10 +41,11 @@ capn = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 capfps = cap.get(cv2.CAP_PROP_FPS)
 capw, caph = cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 capsize = np.int32([capw, caph])
-screensize = np.int32([capw + 300, caph])
+screensize = np.int32([capw + 550, caph])
 screen = pygame.display.set_mode(screensize)
-viewport = screen.subsurface([0, 0, capw, caph])
-dataport = screen.subsurface([capw, 0, 300, caph])
+dataport = screen.subsurface([0, 0, 300, caph])
+viewport = screen.subsurface([300, 0, capw, caph])
+faunaport = screen.subsurface([capw + 300, 0, 250, caph])
 pygame.display.set_caption("VIDEO", "Video")
 print("{:.0f} frames ({:.0f} x {:.0f}) at {} FPS".format(capn, capw, caph, capfps))
 
@@ -64,21 +66,22 @@ def getnewframe(pos=None):
 
 
 # Write to the data display panel
-def writedataline(text, lineno, col=WHITE):
-    dataport.blit(textfont.render(text, True, col), (20, 30 * lineno))
+def writedataline(text, lineno, col=WHITE, port=dataport):
+    port.blit(textfont.render(text, True, col), (20, 30 * lineno))
 
 
 # Blob-shaped filter used to find red blobs
 redblobfinder = - 5 * np.ones([17, 17])
 redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 
-# Set initial state of playback
+# Set initial state of interface
 pause = True
 showreticle = True
-startpos = 45900
+startpos = 0
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 skipspeed = 5
+faunaindex = 0
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
 dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
@@ -133,10 +136,25 @@ except FileNotFoundError:
     dfout = pd.DataFrame(coldefaults)
 dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
 
+# TODO: (After assignment) add help interface, automatic graph scaling, etc
 try:
     while True:
-        mousepos = pygame.mouse.get_pos()
+        mousepos = np.int32(pygame.mouse.get_pos())
         # TODO: Actually add facility to record animal sightings, since that's the point of this application!
+        numberspressed = list(keys.intersection(numberkeys))
+        if len(numberspressed) > 0:
+            # Number keys select that numbered faunal record
+            faunaindex = numberkeys.index(numberspressed[0])
+        # These two are placed here (before updat of dataoutindex)so that they get the previous frame
+        # (when the key was pressed) before the next one is drawn
+        if K_UP in keys and K_UP not in prevkeys:
+            # Up key adds a count for the selected faunal record
+            dfout.loc[dataoutindex, faunanames[faunaindex]] += 1
+            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        if K_DOWN in keys and K_DOWN not in prevkeys:
+            # Up key removes a count for the selected faunal record
+            dfout.loc[dataoutindex, faunanames[faunaindex]] -= 1
+            dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
             pause = not pause
@@ -200,9 +218,10 @@ try:
             pygame.draw.circle(viewport, MAGENTA, upperdot, 20, 1)
             pygame.draw.circle(viewport, MAGENTA, lowerdot, 20, 1)
             pygame.draw.line(viewport, CYAN, lowerdot, upperdot, 1)
-            if viewport.get_rect().collidepoint(mousepos):
-                pygame.draw.rect(viewport, WHITE, [*mousepos, scalebar, scalebar], 1)
-                viewport.blit(textfont.render("10 x 10", True, WHITE), [mousepos[0], mousepos[1] + scalebar])
+            viewportmousepos = mousepos - viewport.get_offset()
+            if viewport.get_rect().collidepoint(viewportmousepos):
+                pygame.draw.rect(viewport, WHITE, [*viewportmousepos, scalebar, scalebar], 1)
+                viewport.blit(textfont.render("10 x 10", True, WHITE), viewportmousepos + (0, scalebar))
             else:
                 pygame.draw.rect(viewport, WHITE, [20, 20, scalebar, scalebar], 1)
                 viewport.blit(textfont.render("10 x 10", True, WHITE), [20, 20 + scalebar])
@@ -252,6 +271,11 @@ try:
         pygame.draw.circle(dataport, RED, [int(dfenv["Dist"][dataenvindex]), int(scaledtemp[dataenvindex]) + 420], 3)
         pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 5)
         pygame.draw.circle(dataport, BLUE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 3)
+        # Draw in faunal records
+        writedataline("~ FAUNA ~", 0.5, port=faunaport)
+        for i, name in enumerate(faunanames):
+            writedataline("{} - {}: {:d}".format(i + 1, name, dfout.loc[dataoutindex, name]),
+                          i + 1.5, WHITE if faunaindex == i else WHITE / 2, faunaport)
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
@@ -264,7 +288,8 @@ try:
             elif e.type == KEYUP:
                 keys.discard(e.key)
             elif e.type == MOUSEBUTTONDOWN:
-                if viewport.get_rect().collidepoint(mousepos):
+                viewportmousepos = np.int32(pygame.mouse.get_pos()) - viewport.get_offset()
+                if viewport.get_rect().collidepoint(viewportmousepos):
                     # Pauses if you click on the video
                     pause = not pause
                     # Line up playback position with multiple of skipspeed if skipping has occurred while paused
