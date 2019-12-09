@@ -51,18 +51,17 @@ print("{:.0f} frames ({:.0f} x {:.0f}) at {} FPS".format(capn, capw, caph, capfp
 
 
 # Read the next frame from the video, moving to location specified by pos if required
-def getnewframe(pos=None):
-    if pos is not None:
-        if pos < 0:
-            pos = 0
-        cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
-    pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
-    ret, frame = cap.read()
-    if not ret:
+def getnewframe(newpos=None):
+    if newpos is not None:
+        newpos = min(max(0, newpos), (capn // skipspeed) * skipspeed)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, newpos)
+    newpos = cap.get(cv2.CAP_PROP_POS_FRAMES)
+    newret, newframe = cap.read()
+    if not newret:
         print("Oh No")
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    frame = np.rot90(np.fliplr(frame))
-    return pos, frame
+    newframe = cv2.cvtColor(newframe, cv2.COLOR_BGR2RGB)
+    newframe = np.rot90(np.fliplr(newframe))
+    return newpos, newframe
 
 
 # Write to the data display panel
@@ -78,9 +77,9 @@ redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 pause = True
 showreticle = True
 startpos = 0
+skipspeed = 10000
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
-skipspeed = 10000
 faunaindex = 0
 frameoffset = startpos % skipspeed
 
@@ -196,8 +195,12 @@ try:
         elif not pause:
             # Play forward by getting a certain number of frames according to skipspeed, and only showing the last one
             # (elif, not if, to allow skipping back to frame 0)
-            for i in range(skipspeed):
-                pos, frame = getnewframe()
+            # Differing methods for skipping used at different skipspeed ranges due to differences in retrieval time
+            if skipspeed <= 200:
+                for i in range(skipspeed):
+                    pos, frame = getnewframe()
+            else:
+                pos, frame = getnewframe(pos + skipspeed)
         # Get the row to write the output data to
         dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
         # Clear the window
