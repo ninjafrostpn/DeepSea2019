@@ -260,7 +260,6 @@ try:
         writedataline("Salinity: {:.4f}".format(dfenv["Salinity"][dataenvindex]), 9, GREEN / 2)
         writedataline("Depth: {:.2f}m".format(dfenv["Depth"][dataenvindex]), 10, BLUE)
         writedataline("Temp: {:.4f}°C".format(dfenv["Temp"][dataenvindex]), 11, RED)
-
         dataport.blit(minigraph, (0, 420))
         pygame.draw.line(dataport, WHITE, [dfenv["Dist"][dataenvindex], 420], [dfenv["Dist"][dataenvindex], caph])
         pygame.draw.circle(dataport, WHITE, [int(dfenv["Dist"][dataenvindex]),
@@ -273,9 +272,18 @@ try:
         pygame.draw.circle(dataport, BLUE, [int(dfenv["Dist"][dataenvindex]), int(scaleddepth[dataenvindex]) + 420], 3)
         # Draw in faunal records
         writedataline("~ FAUNA ~", 0.5, port=faunaport)
+        barwidth = 0.5 * faunaport.get_width() / (len(faunanames) + 1)
         for i, name in enumerate(faunanames):
-            writedataline("{} - {}: {:d}".format(i + 1, name, dfout.loc[dataoutindex, name]),
-                          i + 1.5, WHITE if faunaindex == i else WHITE / 2, faunaport)
+            selectedcol = WHITE if faunaindex == i else WHITE / 2
+            writedataline("{} - {}: {:d} ({})".format(i + 1, name,
+                                                      dfout.loc[dataoutindex, name],
+                                                      sum(dfout.loc[:dataoutindex, name])),
+                          i + 1.5, selectedcol, faunaport)
+            pygame.draw.rect(faunaport, selectedcol,
+                             [((2 * i) + 1) * barwidth, caph, barwidth, -2 * dfout.loc[dataoutindex, name]])
+            num = textfont.render(str(i + 1), True, selectedcol)
+            faunaport.blit(num, [(((2 * i) + 1.5) * barwidth) - (num.get_width() / 2),
+                                 caph - (2 * sum(dfout.loc[:dataoutindex, name])) - num.get_height()])
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
