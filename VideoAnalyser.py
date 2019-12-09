@@ -15,7 +15,7 @@ pygame.init()
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
 
 # Extracts version number from a filename
-filenomatcher = re.compile("-[0-9]*\.")
+filenomatcher = re.compile(r"-[0-9]*\.")
 getfileno = lambda x: int(filenomatcher.search(x)[0][1:-1])
 
 # Keys pressed in the frame just shown...
@@ -80,8 +80,9 @@ showreticle = True
 startpos = 0
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
-skipspeed = 5
+skipspeed = 10000
 faunaindex = 0
+frameoffset = startpos % skipspeed
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
 dfenv = pd.read_excel("SOES6008_coursework_DATA.xlsx", skiprows=6)
@@ -114,12 +115,15 @@ coldefaults = {"Frame": np.arange(0, capn, skipspeed), **{col: np.nan for col in
                "ScaleOK": -1, **{i: np.nan for i in scalestats},
                "LastEdited": "nan", **{name: 0 for name in faunanames}}
 try:
-    csvnames = sorted(glob("AllData{:.0f}-*.csv".format(skipspeed)), key=getfileno)
+    # Filenames are of format "AllDataX[Y]-Z.csv", where X is the skipspeed, Y is the frameoffset, Z is the version nr
+    print(skipspeed, frameoffset, r"AllData{:.0f}\[{}\]-*.csv".format(skipspeed, frameoffset))
+    csvnames = sorted(glob("AllData{:.0f}({})-*.csv".format(skipspeed, frameoffset)), key=getfileno)
     if len(csvnames) == 0:
+        csvinname = "Matching Files"
         raise FileNotFoundError
     csvinname = csvnames[-1]
     dfout = pd.read_csv(csvinname)
-    csvoutname = "AllData{:.0f}-{}.csv".format(skipspeed, getfileno(csvinname) + 1)
+    csvoutname = "AllData{:.0f}({})-{}.csv".format(skipspeed, frameoffset, getfileno(csvinname) + 1)
     print("{} frames displayed, {} in".format(len(dfout["Frame"]), np.ceil(capn / skipspeed)), csvoutname)
     if len(dfout["Frame"]) != np.ceil(capn / skipspeed):
         raise Exception("{}'s Frame Count or Resolution Doesn't Match Analyser Setting".format(csvoutname))
@@ -130,9 +134,9 @@ try:
         dfout = dfout.assign(**{key: coldefaults[key] for key in coldefaultskeys[~colsinmask]})
     print("Loaded in", csvinname)
 except FileNotFoundError:
-    csvoutname = "AllData{:.0f}-0.csv".format(skipspeed)
+    csvoutname = "AllData{:.0f}({})-0.csv".format(skipspeed, frameoffset)
+    print("No {} found, creating new DataFrame".format(csvinname))
     print("{} frames displayed and in".format(np.ceil(capn / skipspeed)), csvoutname)
-    print("No {} found, creating new DataFrame".format(csvoutname))
     dfout = pd.DataFrame(coldefaults)
 dataoutindex = np.argwhere(dfout["Frame"] == pos)[0][0]
 
