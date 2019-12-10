@@ -5,7 +5,7 @@ import pandas as pd
 import re
 import scipy.stats as sps
 
-plotids = ["habitatconditions"]
+plotids = ["colourplotdist", "colourplottime", "colourplotframe"]
 
 # Function for converting HH:MM:SS to total seconds
 timetosec = np.vectorize(lambda x: (((x.hour * 60) + x.minute) * 60) + x.second)
@@ -51,6 +51,8 @@ alldata = alldata.loc[::750]
 print(alldata.shape[0], "surveyed frames")
 alldata = alldata.loc[(alldata["Unusable"] == 0) & (alldata["ScaleOK"] > 0)]
 print(alldata.shape[0], "usable surveyed frames")
+alldata.set_index("Frame")
+print(alldata.head())
 
 sftbtmmask = (alldata["SoftBtm"] == 1)
 hrdbtmmask = (alldata["HardBtm"] == 1)
@@ -100,3 +102,35 @@ if "shrimpbottoms" in plotids:
     plt.show()
     print(sps.ttest_ind(np.log1p(alldata.loc[sftbtmmask]["Shreemp"] / alldata.loc[sftbtmmask]["AreaEstimate"]),
                         np.log1p(alldata.loc[hrdbtmmask]["Shreemp"] / alldata.loc[hrdbtmmask]["AreaEstimate"])))
+
+coldata = pd.read_csv("AvgCol.csv")
+
+if "colourplotdist" in plotids:
+    for i in range(envdata.shape[0] - 1):
+        # print(envdata.loc[i, "Dist"])
+        # print(np.float64(coldata.loc[i, ["AvgR", "AvgG", "AvgB"]]) / 255)
+        plt.plot([envdata.loc[i, "Dist"]] * 2, [0, 1],
+                 color=np.float64(coldata.loc[envdata.loc[i, "VideoTimeSecs"] * 25,
+                                              ["AvgR", "AvgG", "AvgB"]]) / 255,
+                 linewidth=0.5)
+    plt.yticks([])
+    plt.xlabel("Dist (m)")
+    plt.show()
+
+if "colourplottime" in plotids:
+    for i in range(envdata.shape[0] - 1):
+        plt.plot([envdata.loc[i, "VideoTimeSecs"]] * 2, [0, 1],
+                 color=np.float64(coldata.loc[envdata.loc[i, "VideoTimeSecs"] * 25,
+                                              ["AvgR", "AvgG", "AvgB"]]) / 255,
+                 linewidth=0.5)
+    plt.yticks([])
+    plt.xlabel("Time through Video (s)")
+    plt.show()
+
+if "colourplotframe" in plotids:
+    # Rather intensive, I wouldn't bother.
+    for i in range(coldata.shape[0] - 1):
+        plt.plot([i, i], [0, 1], color=np.float64(coldata.loc[i, ["AvgR", "AvgG", "AvgB"]]) / 255, linewidth=0.1)
+    plt.yticks([])
+    plt.xlabel("Frame")
+    plt.show()
