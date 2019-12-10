@@ -77,7 +77,7 @@ redblobfinder = cv2.circle(redblobfinder, (8, 8), 6, 10, -1)
 # Set initial state of interface
 pause = True
 showreticle = True
-startpos = 0
+startpos = 55500
 skipspeed = int(30 * capfps)  # A frame every 30 sec
 pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
@@ -388,6 +388,6 @@ finally:
             print(csvoutname, "might be open elsewhere, waiting for you to close it...")
             time.sleep(5)
     print("Save completed")
-    print("Exited on frame", pos)
+    print("Exited on frame", int(pos))
 
 # https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
