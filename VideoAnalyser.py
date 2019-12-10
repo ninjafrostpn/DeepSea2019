@@ -112,7 +112,7 @@ for i in range(dfenv.shape[0] - 1):
 # The Cover columns give 0 as not present, 1 as present
 scalestats = ["ScalePX", "ScalePX/m", "AreaEstimate", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
 faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "ChonkAnemone", "MudAnemone", "Ophi",
-              "Feesh", "BigSqueed", "SmolSqueed", "Blueb", "TinyWhite", "SeaSosig"]
+              "Feesh", "BigSqueed", "SmolSqueed", "Blueb", "TinyWhite", "SeaSosig", "UrChin"]
 covertypes = ["HardBtm", "SoftBtm", "Clams", "Bacteria", "Query", "Unusable"]
 # For ScaleOK, -1 represents unchecked, -2 or 2 represent bad/good autocheck, 0 or 1 represent confirmed bad/good
 # For Done, 0 represents incomplete, 1 represents complete for count check, lasers check and cover check
@@ -122,7 +122,7 @@ coldefaults = {"Frame": np.arange(capn), **{col: np.nan for col in dfenv.columns
                **{covertype: 0 for covertype in covertypes},
                "Done": 0, "LastEdited": "nan"}
 try:
-    # Filenames are of format "AllDataX[Y]-Z.csv", where X is the skipspeed, Y is the frameoffset, Z is the version nr
+    # Filenames are of format "AllData-Z.csv", where Z is the version nr
     csvnames = sorted(glob("AllData-*.csv"), key=getfileno)
     if len(csvnames) == 0:
         csvinname = "Matching Files"
@@ -199,7 +199,6 @@ try:
             else:
                 dfout.loc[dataoutindex, "ScaleOK"] = 0
             dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
         if K_RETURN in keys and K_RETURN not in prevkeys:
             # Enter to register/deregister count completeness
             oldverdict = dfout.loc[dataoutindex, "Done"]
@@ -208,7 +207,6 @@ try:
             else:
                 dfout.loc[dataoutindex, "Done"] = 0
             dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            print("ScaleOK:", dfout.loc[dataoutindex, "ScaleOK"] > 0)
         if K_RIGHT in keys:
             # Skip forward with right arrow key
             if pause:
