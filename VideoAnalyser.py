@@ -189,6 +189,12 @@ try:
             if K_DOWN in keys and K_DOWN not in prevkeys:
                 dfout.loc[dataoutindex, covertype] -= 1
                 dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            if K_PAGEUP in keys and K_PAGEUP not in prevkeys:
+                dfout.loc[dataoutindex, covertype] = 16
+                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            if K_PAGEDOWN in keys and K_PAGEDOWN not in prevkeys:
+                dfout.loc[dataoutindex, covertype] = 0
+                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
             pause = not pause
@@ -229,6 +235,12 @@ try:
                 pos -= skipspeed
             else:
                 pos -= 10 * skipspeed
+            pos, frame = getnewframe(pos)
+        elif K_END in keys:
+            pos = capn - 1
+            pos, frame = getnewframe(pos)
+        elif K_HOME in keys:
+            pos = 0
             pos, frame = getnewframe(pos)
         elif not pause:
             # Play forward by getting a certain number of frames according to skipspeed, and only showing the last one
