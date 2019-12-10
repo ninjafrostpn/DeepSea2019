@@ -83,6 +83,9 @@ pos, frame = getnewframe(startpos)
 cap.set(cv2.CAP_PROP_POS_FRAMES, startpos)
 faunaindex = 0
 faunaoffset = 0
+coverindex = 0
+# If 0, counting species, 1, counting habitat representation
+countmode = 0
 frameoffset = startpos % skipspeed
 
 # Read data in from the xlsx file as a pandas DataFrame (remove metadata in first 6 rows)
@@ -109,7 +112,7 @@ for i in range(dfenv.shape[0] - 1):
 # Create DataFrame for per-frame output data
 # The ScaleOK column ought to be switched to False where the script has picked up incorrectly
 # The Faunal columns give counts of each individual once, hopefully on the first frame they were spotted
-# The Cover columns give 0 as not present, 1 as present
+# The Cover columns give the number of 16ths of the image in which the bottom type is present
 scalestats = ["ScalePX", "ScalePX/m", "AreaEstimate", "UScaleX", "UScaleY", "LScaleX", "LScaleY"]
 faunanames = ["Shreemp", "Extendoworm", "Clamaybe", "ChonkAnemone", "MudAnemone", "Ophi",
               "Feesh", "BigSqueed", "SmolSqueed", "Blueb", "TinyWhite", "SeaSosig", "UrChin"]
@@ -150,19 +153,14 @@ try:
         # TODO: Actually add facility to record animal sightings, since that's the point of this application!
         numberspressed = list(keys.intersection(numberkeys))
         if len(numberspressed) > 0:
+            countmode = 0
             # Number keys select that numbered faunal record
             faunaindex = numberkeys.index(numberspressed[0])
         toprowkeyspressed = list(keys.intersection(toprowkeys))
         if len(toprowkeyspressed) > 0:
-            # Letter keys on top row toggle bottom types
-            for toprowkey in toprowkeyspressed:
-                covertype = covertypes[toprowkeys.index(toprowkey)]
-                oldverdict = dfout.loc[dataoutindex, covertype]
-                if oldverdict <= 0:
-                    dfout.loc[dataoutindex, covertype] = 1
-                else:
-                    dfout.loc[dataoutindex, covertype] = 0
-                dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            countmode = 1
+            # Letter keys on top row select that lettered bottom type record
+            coverindex = toprowkeys.index(toprowkeyspressed[0])
         if K_COMMA in keys and K_COMMA not in prevkeys:
             # Comma key to move fauna selector numbers up (because it has the < symbol on it)
             if faunaoffset - 9 >= 0:
@@ -171,16 +169,25 @@ try:
             # Comma key to move fauna selector numbers down (because it has the > symbol on it)
             if faunaoffset + 9 < len(faunanames):
                 faunaoffset += 9
-        if 0 <= faunaindex + faunaoffset < len(faunanames):
-            # These two are placed here (before update of dataoutindex)so that they get the previous frame
-            # (when the key was pressed) before the next one is drawn
+        if countmode == 0:
+            if 0 <= faunaindex + faunaoffset < len(faunanames):
+                # These two are placed here (before update of dataoutindex)so that they get the previous frame
+                # (when the key was pressed) before the next one is drawn
+                if K_UP in keys and K_UP not in prevkeys:
+                    # Up key adds a count for the selected faunal record
+                    dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] += 1
+                    dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                if K_DOWN in keys and K_DOWN not in prevkeys:
+                    # Up key removes a count for the selected faunal record
+                    dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] -= 1
+                    dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            covertype = covertypes[coverindex]
             if K_UP in keys and K_UP not in prevkeys:
-                # Up key adds a count for the selected faunal record
-                dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] += 1
+                dfout.loc[dataoutindex, covertype] += 1
                 dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
             if K_DOWN in keys and K_DOWN not in prevkeys:
-                # Up key removes a count for the selected faunal record
-                dfout.loc[dataoutindex, faunanames[faunaindex + faunaoffset]] -= 1
+                dfout.loc[dataoutindex, covertype] -= 1
                 dfout.loc[dataoutindex, "LastEdited"] = time.strftime("%Y-%m-%d %H:%M:%S")
         if K_SPACE in keys and K_SPACE not in prevkeys:
             # Spacebar to toggle pause
@@ -250,9 +257,13 @@ try:
         viewport.blit(pframe, (0, 0))
         scalebar = np.linalg.norm(upperdot - lowerdot)
         if showreticle:
+            # Draw cover-apportioning grid
+            for i in range(1, 4):
+                pygame.draw.line(viewport, GREEN, [10 + ((capw - 20) * (i/4)), 0], [10 + ((capw - 20) * (i/4)), caph])
+                pygame.draw.line(viewport, GREEN, [10, caph * (i / 4)], [capw - 10, caph * (i / 4)])
             # Draw dot-finder reticle
-            pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 1)
-            pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 1)
+            pygame.draw.rect(viewport, WHITE, [330, 144, 370, 288], 2)
+            pygame.draw.line(viewport, WHITE, [330, 288], [700, 288], 2)
             pygame.draw.circle(viewport, MAGENTA, upperdot, 20, 1)
             pygame.draw.circle(viewport, MAGENTA, lowerdot, 20, 1)
             pygame.draw.line(viewport, CYAN, lowerdot, upperdot, 1)
@@ -317,12 +328,13 @@ try:
         writedataline("Done: {}".format("YES" if dfout.loc[dataoutindex, "Done"] else "NO"),
                       1.5, port=faunaport)
         for i, covertype in enumerate(covertypes):
-            selectedcol = GREEN if dfout.loc[dataoutindex, covertype] == 1 else RED
-            writedataline("{} - {}".format(chr(toprowkeys[i]), covertype),
+            selectedcol = GREEN if (coverindex == i) and (countmode == 1) else GREEN / 2
+            writedataline("{} - {}: {}".format(chr(toprowkeys[i]), covertype,
+                                               dfout.loc[dataoutindex, covertype]),
                           i + 2.5, selectedcol, faunaport)
         barwidth = 0.5 * faunaport.get_width() / (len(faunanames) + 1)
         for i, name in enumerate(faunanames[faunaoffset:faunaoffset + 9]):
-            selectedcol = WHITE if faunaindex == i else WHITE / 2
+            selectedcol = WHITE if (faunaindex == i) and (countmode == 0) else WHITE / 2
             writedataline("{} - {}: {} ({})".format(i + 1, name,
                                                     dfout.loc[dataoutindex, name],
                                                     sum(dfout.loc[:dataoutindex, name])),
