@@ -294,7 +294,10 @@ try:
         writedataline("px per m: {:.3f}".format(scalebar * 10), 3.5, CYAN)
         verdict = dfout.loc[dataoutindex, "ScaleOK"]
         writedataline("ScaleOK: {}{}".format(verdict > 0, " (?)" if not (verdict in [0, 1]) else ""), 4.5, MAGENTA)
-        writedataline("FrameSkip: {} ({} left)".format(skipspeed, np.ceil((capn - pos) / skipspeed)), 5.5)
+        writedataline("FrameSkip: {} ({:.0f}:{:.0f})".format(skipspeed,
+                                                             pos // skipspeed,
+                                                             np.ceil((capn - pos) / skipspeed)),
+                      5.5)
         frametime = pos / capfps
         if int(frametime) in dfenv["VideoTimeSecs"]:
             dataenvindex = np.argwhere(int(frametime) == dfenv["VideoTimeSecs"])[0][0]
@@ -332,7 +335,7 @@ try:
             writedataline("{} - {}: {}".format(chr(toprowkeys[i]), covertype,
                                                dfout.loc[dataoutindex, covertype]),
                           i + 2.5, selectedcol, faunaport)
-        barwidth = 0.5 * faunaport.get_width() / (len(faunanames) + 1)
+        barwidth = 0.5 * faunaport.get_width() / (min(len(faunanames), 9) + 1)
         for i, name in enumerate(faunanames[faunaoffset:faunaoffset + 9]):
             selectedcol = WHITE if (faunaindex == i) and (countmode == 0) else WHITE / 2
             writedataline("{} - {}: {} ({})".format(i + 1, name,
@@ -346,6 +349,9 @@ try:
             num = textfont.render(str(i + 1), True, selectedcol)
             faunaport.blit(num, [(((2 * i) + 1.5) * barwidth) - (num.get_width() / 2),
                                  caph - sum(dfout.loc[:dataoutindex, name]) - num.get_height()])
+        writedataline("{} {}".format("<<" if faunaoffset > 0 else "  ",
+                                     ">>" if faunaoffset + 9 < len(faunanames) else "  "),
+                      2.5 + min(len(faunanames), 9) + len(covertypes), WHITE, faunaport)
         pygame.display.flip()
         prevkeys = keys.copy()
         for e in pygame.event.get():
@@ -382,5 +388,6 @@ finally:
             print(csvoutname, "might be open elsewhere, waiting for you to close it...")
             time.sleep(5)
     print("Save completed")
+    print("Exited on frame", pos)
 
 # https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html#videocapture-get
